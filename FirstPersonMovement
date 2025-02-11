@@ -1,0 +1,219 @@
+using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.UI;
+
+public class FirstPersonMovement : MonoBehaviour
+{
+    [Header("Character Movement")]
+    [Range(0f, 4f)]
+    public float WalkSpeed = 2.4f;
+    [Range(0f, 5f)]
+    public float SprintSpeed = 4f;
+    [Range(0f, 5f)]
+    public float JumpForce = 5f;
+
+    [Header("Mouse Sensitivity")]
+    [Tooltip("Horizontal Sensitivity")]
+    [Range(0f, 1f)]
+    public float SensitivityX = 1f;
+    [Tooltip("Vertical Sensitivity")]
+    [Range(0f, 1f)]
+    public float SensitivityY = 1f;
+
+    [Header("Look Angle Limits")]
+    [Range(-60f, -90f)]
+    [Tooltip("Minimum Vertical Look Angle")]
+    public float MinYLookAngle = -80;
+    [Range(60f, 90f)]
+    [Tooltip("Maximum Vertical Look Angle")]
+    public float MaxYLookAngle = 80;
+
+    [Header("Stamina")]
+    public bool EnableStamina = true;
+    [Tooltip("Stamina regeneration rate per second")]
+    [Range(5, 20)]
+    public float staminaRegenRate = 10f;
+    [Tooltip("Minimum stamina required to sprint")]
+    [Range(10, 30)]
+    public float MinStamina = 30f;
+    [Tooltip("Cooldown before stamina regenerates after jumping")]
+    [Range(1, 3)]
+    public float JumpRegenCoolTime = 2f;
+
+    [Header("Stamina Usage")]
+    [Tooltip("Stamina consumed when jumping")]
+    [Range(10, 30)]
+    public float JumpStamina = 25f;
+    [Tooltip("Stamina consumed per second while running")]
+    [Range(10, 40)]
+    public float RunningStamina = 25f;
+
+    [Header("Stamina HUD")]
+    [Tooltip("Color when stamina is regenerating")]
+    public Color regeneratingColor = Color.grey;
+    [Tooltip("Color when stamina is depleting")]
+    public Color depletingColor = Color.white;
+    [Tooltip("Color when stamina is low")]
+    public Color lowStaminaColor = Color.red;
+
+    [Header("Compoment")]
+    [Tooltip("First person camera reference")]
+    public Transform PlayerCamera;
+    [Tooltip("UI Slider for Stamina")]
+    public Slider StaminaSlider;
+    [Tooltip("UI Image for Stamina")]
+    public Image sliderFillImage;
+
+    private bool isSprinting = false;
+    private float VerticalRotation = 0f;
+    private Vector3 movementInput = Vector3.zero;
+    private bool isGrounded = false;
+    private int groundContactCount = 0;
+    private float Stamina = 100f;
+    private float MaxStamina = 100f;
+    private float lastJumpTime = -Mathf.Infinity;
+    private Rigidbody rb;
+
+    private void Start()
+    {
+        rb = GetComponent<Rigidbody>();
+        rb.useGravity = true;
+        Cursor.lockState = CursorLockMode.Locked;
+        if (StaminaSlider != null) StaminaSlider.gameObject.SetActive(false);
+    }
+
+    private void Update()
+    {
+        StaminaRegenerate();
+        StaminaUI();
+    }
+
+    private void FixedUpdate()
+    {
+        HandleStamina();
+        HandleMovement();
+    }
+
+    public void Move_Event(InputAction.CallbackContext context)
+    {
+        Vector2 input = context.ReadValue<Vector2>();
+        movementInput = new Vector3(input.x, 0, input.y);
+    }
+
+    public void Look_Event(InputAction.CallbackContext context)
+    {
+        Vector2 lookInput = context.ReadValue<Vector2>();
+        float mouseX = lookInput.x * SensitivityX;
+        float mouseY = lookInput.y * SensitivityY;
+
+        transform.Rotate(Vector3.up * mouseX);
+
+        VerticalRotation -= mouseY;
+        VerticalRotation = Mathf.Clamp(VerticalRotation, MinYLookAngle, MaxYLookAngle);
+        PlayerCamera.localRotation = Quaternion.Euler(VerticalRotation, 0f, 0f);
+    }
+
+    public void Jump_Event(InputAction.CallbackContext context)
+    {
+        if (context.performed && isGrounded)
+        {
+            if (!EnableStamina || Stamina >= JumpStamina)
+            {
+                rb.linearVelocity = new Vector3(rb.linearVelocity.x, JumpForce, rb.linearVelocity.z);
+                isGrounded = false;
+                groundContactCount = 0;
+
+                if (EnableStamina)
+                {
+                    Stamina -= JumpStamina;
+                    lastJumpTime = Time.time;
+                }
+            }
+        }
+    }
+
+    public void Sprint_Event(InputAction.CallbackContext context)
+    {
+        if (context.started)
+        {
+            if (!EnableStamina || Stamina > MinStamina)
+            {
+                isSprinting = true;
+            }
+        }
+        else if (context.canceled)
+        {
+            isSprinting = false;
+        }
+    }
+
+    private void HandleStamina()
+    {
+        if (EnableStamina && isSprinting)
+        {
+            Stamina -= RunningStamina * Time.fixedDeltaTime;
+            if (Stamina <= 0)
+            {
+                Stamina = 0;
+                isSprinting = false;
+            }
+        }
+    }
+
+    private void HandleMovement()
+    {
+        float speed = isSprinting ? SprintSpeed : WalkSpeed;
+
+        Vector3 cameraForward = PlayerCamera.forward;
+        Vector3 cameraRight = PlayerCamera.right;
+        cameraForward.y = 0f;
+        cameraRight.y = 0f;
+        cameraForward.Normalize();
+        cameraRight.Normalize();
+
+        Vector3 moveDirection = (cameraForward * movementInput.z + cameraRight * movementInput.x).normalized;
+        Vector3 targetVelocity = moveDirection * speed;
+        rb.linearVelocity = new Vector3(targetVelocity.x, rb.linearVelocity.y, targetVelocity.z);
+    }
+
+    private void StaminaRegenerate()
+    {
+        if (!EnableStamina || Time.time < lastJumpTime + JumpRegenCoolTime || isSprinting || Stamina >= MaxStamina) return;
+
+        Stamina += staminaRegenRate * Time.deltaTime;
+        Stamina = Mathf.Min(Stamina, MaxStamina);
+    }
+
+    private void StaminaUI()
+    {
+        if (!EnableStamina || StaminaSlider == null || sliderFillImage == null) return;
+
+        StaminaSlider.value = Stamina / MaxStamina;
+        StaminaSlider.gameObject.SetActive(Stamina < MaxStamina);
+        sliderFillImage.color = Stamina < MinStamina ? lowStaminaColor :
+                                isSprinting ? depletingColor : regeneratingColor;
+    }
+
+    private void OnCollisionEnter(Collision collision)
+    {
+        foreach (ContactPoint contact in collision.contacts)
+        {
+            if (contact.normal.y > 0.1f)
+            {
+                groundContactCount++;
+                isGrounded = true;
+                break;
+            }
+        }
+    }
+
+    private void OnCollisionExit(Collision collision)
+    {
+        groundContactCount = Mathf.Max(groundContactCount - 1, 0);
+
+        if (groundContactCount == 0)
+        {
+            isGrounded = false;
+        }
+    }
+}
