@@ -1,5 +1,5 @@
 # Introduction
-An adjustable first person movement script for Unity 6, designed to give you full control over player movement with many necessary features. Ideal for FPS games and customizable directly in the Unity Editor.
+An adjustable first person movement Input System script for Unity 6, designed to give you full control over player movement with many necessary features. Ideal for FPS games and customizable directly in the Unity Editor.
 
 ## Features
 - **Character Movement**:
